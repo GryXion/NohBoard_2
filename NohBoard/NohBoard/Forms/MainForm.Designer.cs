@@ -84,8 +84,16 @@ namespace ThoNohT.NohBoard.Forms
             this.mnuExit = new System.Windows.Forms.ToolStripMenuItem();
             this.mnuUpdate = new System.Windows.Forms.ToolStripMenuItem();
             this.mnuGenerateLog = new System.Windows.Forms.ToolStripMenuItem();
+            this.mnuHelp = new System.Windows.Forms.ToolStripMenuItem();
+            this.mnuHelpOpenDataFolder = new System.Windows.Forms.ToolStripMenuItem();
+            this.mnuHelpOpenLogsFolder = new System.Windows.Forms.ToolStripMenuItem();
+            this.mnuHelpAbout = new System.Windows.Forms.ToolStripMenuItem();
+            this.MainMenuSep5 = new System.Windows.Forms.ToolStripSeparator();
+            this.EditStatusStrip = new System.Windows.Forms.StatusStrip();
+            this.EditStatusLabel = new System.Windows.Forms.ToolStripStatusLabel();
             this.KeyCheckTimer = new System.Windows.Forms.Timer(this.components);
             this.MainMenu.SuspendLayout();
+            this.EditStatusStrip.SuspendLayout();
             this.SuspendLayout();
             // 
             // UpdateTimer
@@ -118,7 +126,9 @@ namespace ThoNohT.NohBoard.Forms
             this.MainMenuSep3,
             this.mnuExit,
             this.mnuUpdate,
-            this.mnuGenerateLog});
+            this.mnuGenerateLog,
+            this.MainMenuSep5,
+            this.mnuHelp});
             this.MainMenu.Name = "MainMenu";
             this.MainMenu.Size = new System.Drawing.Size(203, 424);
             this.MainMenu.Opening += new System.ComponentModel.CancelEventHandler(this.MainMenu_Opening);
@@ -384,6 +394,56 @@ namespace ThoNohT.NohBoard.Forms
             this.mnuGenerateLog.Text = "Generate crash log";
             this.mnuGenerateLog.Click += new System.EventHandler(this.mnuGenerateLog_Click);
             // 
+            // MainMenuSep5
+            // 
+            this.MainMenuSep5.Name = "MainMenuSep5";
+            this.MainMenuSep5.Size = new System.Drawing.Size(199, 6);
+            // 
+            // mnuHelp
+            // 
+            this.mnuHelp.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.mnuHelpOpenDataFolder,
+            this.mnuHelpOpenLogsFolder,
+            this.mnuHelpAbout});
+            this.mnuHelp.Name = "mnuHelp";
+            this.mnuHelp.Size = new System.Drawing.Size(202, 22);
+            this.mnuHelp.Text = "&Help";
+            // 
+            // mnuHelpOpenDataFolder
+            // 
+            this.mnuHelpOpenDataFolder.Name = "mnuHelpOpenDataFolder";
+            this.mnuHelpOpenDataFolder.Size = new System.Drawing.Size(217, 22);
+            this.mnuHelpOpenDataFolder.Text = "Open &data folder";
+            this.mnuHelpOpenDataFolder.Click += new System.EventHandler(this.mnuHelpOpenDataFolder_Click);
+            // 
+            // mnuHelpOpenLogsFolder
+            // 
+            this.mnuHelpOpenLogsFolder.Name = "mnuHelpOpenLogsFolder";
+            this.mnuHelpOpenLogsFolder.Size = new System.Drawing.Size(217, 22);
+            this.mnuHelpOpenLogsFolder.Text = "Open &logs folder";
+            this.mnuHelpOpenLogsFolder.Click += new System.EventHandler(this.mnuHelpOpenLogsFolder_Click);
+            // 
+            // mnuHelpAbout
+            // 
+            this.mnuHelpAbout.Name = "mnuHelpAbout";
+            this.mnuHelpAbout.Size = new System.Drawing.Size(217, 22);
+            this.mnuHelpAbout.Text = "&About...";
+            this.mnuHelpAbout.Click += new System.EventHandler(this.mnuHelpAbout_Click);
+            // 
+            // EditStatusStrip
+            // 
+            this.EditStatusStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.EditStatusLabel});
+            this.EditStatusStrip.Location = new System.Drawing.Point(0, 0);
+            this.EditStatusStrip.Name = "EditStatusStrip";
+            this.EditStatusStrip.SizingGrip = false;
+            this.EditStatusStrip.Visible = false;
+            // 
+            // EditStatusLabel
+            // 
+            this.EditStatusLabel.Name = "EditStatusLabel";
+            this.EditStatusLabel.Text = "Edit mode";
+            // 
             // KeyCheckTimer
             // 
             this.KeyCheckTimer.Interval = 1000;
@@ -394,6 +454,7 @@ namespace ThoNohT.NohBoard.Forms
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(284, 261);
+            this.Controls.Add(this.EditStatusStrip);
             this.ContextMenuStrip = this.MainMenu;
             this.DoubleBuffered = true;
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
@@ -412,7 +473,10 @@ namespace ThoNohT.NohBoard.Forms
             this.MouseUp += new System.Windows.Forms.MouseEventHandler(this.MainForm_MouseUp);
             this.Move += new System.EventHandler(this.MainForm_Move);
             this.MainMenu.ResumeLayout(false);
+            this.EditStatusStrip.ResumeLayout(false);
+            this.EditStatusStrip.PerformLayout();
             this.ResumeLayout(false);
+            this.PerformLayout();
 
         }
 
@@ -456,6 +520,13 @@ namespace ThoNohT.NohBoard.Forms
         private System.Windows.Forms.ToolStripMenuItem mnuKeyboardProperties;
         private System.Windows.Forms.ToolStripMenuItem mnuUpdateTextPosition;
         private System.Windows.Forms.ToolStripMenuItem mnuGenerateLog;
+        private System.Windows.Forms.ToolStripSeparator MainMenuSep5;
+        private System.Windows.Forms.ToolStripMenuItem mnuHelp;
+        private System.Windows.Forms.ToolStripMenuItem mnuHelpOpenDataFolder;
+        private System.Windows.Forms.ToolStripMenuItem mnuHelpOpenLogsFolder;
+        private System.Windows.Forms.ToolStripMenuItem mnuHelpAbout;
+        private System.Windows.Forms.StatusStrip EditStatusStrip;
+        private System.Windows.Forms.ToolStripStatusLabel EditStatusLabel;
     }
 }
 

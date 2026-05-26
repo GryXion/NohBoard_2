@@ -1,18 +1,27 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <RootNamespace>ThoNohT.NohBoard.Hooking</RootNamespace>
     <AssemblyName>NohBoard.Hooking</AssemblyName>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyTitle>NohBoard.Hooking</AssemblyTitle>
+    <Description>A keyboard and mouse hooking library for NohBoard.</Description>
+    <Product>NohBoard Hooking Library</Product>
+    <Company>ThoNohT</Company>
+    <Copyright>Copyright (c) Eric Bataille and contributors</Copyright>
+    <Version>1.0.0</Version>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <Target Name="GenerateVersionedFiles" BeforeTargets="PreBuildEvent">
-    <Exec Command="$(SolutionDir)gotri.exe -i &quot;$(ProjectDir)Properties/AssemblyInfo.cs.template&quot; -o &quot;$(ProjectDir)Properties/AssemblyInfo.cs&quot;" />
-    <ItemGroup>
-      <Compile Include="**/*$(DefaultLanguageSourceExtension)"
-               Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder);$(BaseIntermediateOutputPath)**;$(BaseOutputPath)**;@(Compile)" />
-    </ItemGroup>
-  </Target>
+  <!-- Expose internal helpers (ProcessKeyboardMessage / ProcessMouseMessage) to the test assembly. -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>NohBoard.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 
 </Project>

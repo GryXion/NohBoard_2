@@ -116,6 +116,8 @@ namespace ThoNohT.NohBoard.Forms
                 this.highlightedDefinition = null;
                 this.selectedDefinition = null;
             }
+
+            this.UpdateEditStatusStrip();
         }
 
         /// <summary>

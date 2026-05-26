@@ -187,8 +187,8 @@ namespace ThoNohT.NohBoard.Keyboard
 
             var cDef = GlobalSettings.CurrentDefinition;
             var filename = global
-                ? FileHelper.FromKbs(Constants.GlobalStylesFolder, this.FileName).FullName
-                : FileHelper.FromKbs(cDef.Category, cDef.Name, this.FileName).FullName;
+                ? Path.Combine(AppPaths.UserKeyboardsDir, Constants.GlobalStylesFolder, this.FileName)
+                : Path.Combine(AppPaths.UserKeyboardsDir, cDef.Category, cDef.Name, this.FileName);
 
             FileHelper.EnsurePathExists(filename);
             FileHelper.Serialize(filename, this);
@@ -207,8 +207,8 @@ namespace ThoNohT.NohBoard.Keyboard
         {
             var cDef = GlobalSettings.CurrentDefinition;
             var filePath = global
-                ? FileHelper.FromKbs(Constants.GlobalStylesFolder, $"{name}{StyleExtension}").FullName
-                : FileHelper.FromKbs(cDef.Category, cDef.Name, $"{name}{StyleExtension}").FullName;
+                ? FileHelper.ResolveKbsRead(Constants.GlobalStylesFolder, $"{name}{StyleExtension}")
+                : FileHelper.ResolveKbsRead(cDef.Category, cDef.Name, $"{name}{StyleExtension}");
 
             var currentPath = global ? Constants.GlobalStylesFolder : $"{cDef.Category}/{cDef.Name}";
 

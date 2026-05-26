@@ -22,6 +22,8 @@ namespace ThoNohT.NohBoard
     using System.Text;
     using System.Windows.Forms;
     using ThoNohT.NohBoard.Extra;
+    using ThoNohT.NohBoard.Forms;
+    using ThoNohT.NohBoard.Logging;
 
     /// <summary>
     /// Helper class for handling crashes.
@@ -56,10 +58,22 @@ namespace ThoNohT.NohBoard
         {
             var logFile = GetLogFile();
 
-            File.WriteAllText(logFile.FullName, $"{ShowException(ex)}{CollectState()}");
+            try
+            {
+                File.WriteAllText(logFile.FullName, $"{ShowException(ex)}{CollectState()}");
+            }
+            catch (Exception writeEx)
+            {
+                Log.Error("Failed to write crash log to " + logFile.FullName, writeEx);
+            }
 
-            MessageBox.Show($"NohBoard crashed. Exception message: {ex.Message}{Environment.NewLine}" +
-                $"A crash log was generated: {logFile.FullName}", "NohBoard has crashed");
+            Log.Error("NohBoard crashed.", ex);
+
+            ErrorReporter.Show(
+                "NohBoard has crashed",
+                $"NohBoard crashed and will exit. A crash log was written to:{Environment.NewLine}{logFile.FullName}",
+                ex);
+
             Crashed = true;
             Application.Exit();
         }
@@ -132,22 +146,26 @@ namespace ThoNohT.NohBoard
         }
 
         /// <summary>
-        /// Returns a unique filename to store the log in.
+        /// Returns a unique filename inside the per-application <c>logs</c> directory to store
+        /// the crash log in.
         /// </summary>
         private static FileInfo GetLogFile()
         {
+            var logsDir = AppPaths.LogsDir;
+            var timestamp = $"{DateTime.Now:yyyyMMdd-HHmmss.fffffff}";
             var counter = 1;
-            var fileName = $"{DateTime.Now:yyyyMMdd-hhmmss.fffffff}{counter}.log";
 
-            while (File.Exists(Path.Combine("logs", fileName))) {
+            string Build(int c) => Path.Combine(logsDir, $"crash-{timestamp}-{c}.log");
+
+            var path = Build(counter);
+            while (File.Exists(path))
+            {
                 counter += 1;
-                fileName = $"A{counter}";
+                path = Build(counter);
             }
 
-            var file = new FileInfo(Path.Combine("logs", fileName));
-
-            if (!file.Directory.Exists) file.Directory.Create();
-
+            var file = new FileInfo(path);
+            if (!file.Directory!.Exists) file.Directory.Create();
             return file;
         }
     }

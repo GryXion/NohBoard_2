@@ -31,106 +31,113 @@ namespace ThoNohT.NohBoard.Hooking.Interop
         #region Properties
 
         /// <summary>
-        /// This property is set from outside this class. If <c>true</c>, <see cref="TrapToggleKeyCode"/> can toggle
-        /// the mouse trap.
+        /// If <c>true</c> and the trap key is toggled on, mouse events will not propagate further.
         /// </summary>
         public static bool TrapMouse { get; set; }
 
         /// <summary>
-        /// This property is set from outside this class. If <c>true</c>, <see cref="TrapToggleKeyCode"/> key can
-        /// toggle the keyboard trap.
+        /// If <c>true</c> and the trap key is toggled on, keyboard events will not propagate further.
         /// </summary>
         public static bool TrapKeyboard { get; set; }
 
         /// <summary>
-        /// If this property is set, every key-code processed from the keyboard will be passed through this function.
-        /// If the function returns true, the keycode is then trapped.
+        /// When set, every key-code seen by the keyboard hook is passed through this function.
+        /// If the function returns <c>true</c> the keycode is trapped (not propagated to other apps).
         /// </summary>
         public static Func<int, bool> KeyboardInsert = null;
 
         /// <summary>
-        /// The keycode that toggles the mouse and or keyboard traps. Default is Scroll Lock.
+        /// The keycode that toggles the mouse and/or keyboard trap. Default is Scroll Lock.
         /// </summary>
-	    public static int TrapToggleKeyCode { get; set; } = VK_SCROLL;
+        public static int TrapToggleKeyCode { get; set; } = VK_SCROLL;
 
         /// <summary>
-        /// The time in milliseconds to hold the scroll key.
+        /// The minimum time in milliseconds to keep a scroll key active after a wheel tick.
         /// </summary>
         public static int ScrollHold { get; set; } = 50;
 
         /// <summary>
-        /// The minimum time in milliseconds to hold key presses.
+        /// The minimum time in milliseconds to hold key presses on screen.
         /// </summary>
         public static int PressHold { get; set; } = 0;
+
+        /// <summary>
+        /// <c>true</c> when a low-level mouse hook is currently installed.
+        /// </summary>
+        public static bool MouseHookInstalled => mouseHookHandle != IntPtr.Zero;
+
+        /// <summary>
+        /// <c>true</c> when a low-level keyboard hook is currently installed.
+        /// </summary>
+        public static bool KeyboardHookInstalled => keyboardHookHandle != IntPtr.Zero;
 
         #endregion Properties
 
         #region Methods
 
         /// <summary>
-        /// Enables the mouse hook.
+        /// Enables the global low-level mouse hook. Idempotent.
         /// </summary>
         public static void EnableMouseHook()
         {
-            if (mouseHookHandle != 0) return;
+            if (mouseHookHandle != IntPtr.Zero) return;
 
             mouseDelegate = MouseHookProc;
             mouseHookHandle = SetWindowsHookEx(WH_MOUSE_LL, mouseDelegate, IntPtr.Zero, 0);
 
-            if (mouseHookHandle != 0) return;
+            if (mouseHookHandle != IntPtr.Zero) return;
 
-            // If subscription failed, throw an exception with the error that occurred during the hook process.
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            // Subscription failed - capture last error before clearing the delegate, then throw.
+            var error = Marshal.GetLastWin32Error();
+            mouseDelegate = null;
+            throw new Win32Exception(error, "Failed to install the low-level mouse hook.");
         }
 
         /// <summary>
-        /// Disables the mouse hook.
+        /// Disables the global low-level mouse hook. Idempotent.
         /// </summary>
         public static void DisableMouseHook()
         {
-            if (mouseHookHandle == 0) return;
+            if (mouseHookHandle == IntPtr.Zero) return;
 
-            var result = UnhookWindowsHookEx(mouseHookHandle);
-            mouseHookHandle = 0;
+            var handle = mouseHookHandle;
+            mouseHookHandle = IntPtr.Zero;
+            var success = UnhookWindowsHookEx(handle);
             mouseDelegate = null;
 
-            if (result != 0) return;
-
-            // If unsubscription failed, throw an exception with the error that occurred during the hook process.
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (!success) throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to remove the low-level mouse hook.");
         }
 
         /// <summary>
-        /// Enables the keyboard hook.
+        /// Enables the global low-level keyboard hook. Idempotent.
         /// </summary>
         public static void EnableKeyboardHook()
         {
-            if (keyboardHookHandle != 0) return;
+            if (keyboardHookHandle != IntPtr.Zero) return;
 
             keyboardDelegate = KeyboardHookProc;
             keyboardHookHandle = SetWindowsHookEx(WH_KEYBOARD_LL, keyboardDelegate, IntPtr.Zero, 0);
 
-            if (keyboardHookHandle != 0) return;
+            if (keyboardHookHandle != IntPtr.Zero) return;
 
-            // If subscription failed, throw an exception with the error that occurred during the hook process.
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            var error = Marshal.GetLastWin32Error();
+            keyboardDelegate = null;
+            throw new Win32Exception(error, "Failed to install the low-level keyboard hook.");
         }
 
         /// <summary>
-        /// Disables the keyboard hook.
+        /// Disables the global low-level keyboard hook. Idempotent.
         /// </summary>
         public static void DisableKeyboardHook()
         {
-            if (keyboardHookHandle == 0) return;
+            if (keyboardHookHandle == IntPtr.Zero) return;
 
-            var result = UnhookWindowsHookEx(keyboardHookHandle);
-            keyboardHookHandle = 0;
+            var handle = keyboardHookHandle;
+            keyboardHookHandle = IntPtr.Zero;
+            var success = UnhookWindowsHookEx(handle);
             keyboardDelegate = null;
 
-            if (result != 0) return;
-
-            // If unsubscription failed, throw an exception with the error that occurred during the hook process.
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (!success) throw new Win32Exception(Marshal.GetLastWin32Error(), "Failed to remove the low-level keyboard hook.");
         }
 
         #endregion Methods

@@ -17,8 +17,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace ThoNohT.NohBoard.Extra
 {
+    using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
     using System.Runtime.Serialization.Json;
     using System.Text;
     using System.Text.RegularExpressions;
@@ -118,15 +120,109 @@ namespace ThoNohT.NohBoard.Extra
         }
 
         /// <summary>
-        /// Returns a <see cref="DirectoryInfo"/> for the path to the specified parts, from the keyboards folder.
+        /// Returns a <see cref="DirectoryInfo"/> for the user-writable keyboards location. Used
+        /// for <em>writes</em> (saving keyboard definitions, styles, etc.) and as the "preferred"
+        /// existence check.
         /// </summary>
+        /// <remarks>
+        /// To enumerate or read keyboards across all configured roots use
+        /// <see cref="EnumerateKbsDirectories"/> / <see cref="ResolveKbsRead(string[])"/>
+        /// instead.
+        /// </remarks>
         /// <param name="parts">The parts that make up the path from the keyboards folder.</param>
-        /// <returns>The specified <see cref="DirectoryInfo"/>.</returns>
         public static DirectoryInfo FromKbs(params string[] parts)
         {
-            var array = new List<string> { Constants.ExePath, Constants.KeyboardsFolder };
+            var array = new List<string> { AppPaths.UserKeyboardsDir };
             array.AddRange(parts);
             return new DirectoryInfo(Path.Combine(array.ToArray()));
+        }
+
+        /// <summary>
+        /// Returns the keyboards search roots in priority order (user dir wins, bundled is
+        /// fallback, then any developer-side <c>keyboards/</c> directory walked up from the exe).
+        /// Only existing directories are returned.
+        /// </summary>
+        public static IReadOnlyList<DirectoryInfo> KeyboardsReadRoots()
+        {
+            return AppPaths.KeyboardsSearchPaths.Select(p => new DirectoryInfo(p)).ToList();
+        }
+
+        /// <summary>
+        /// Resolves a logical keyboards-relative path against all known roots (user dir, bundled,
+        /// dev-walked). Returns the <em>first</em> existing match, or the user-writable path
+        /// when nothing exists yet (so callers can write there).
+        /// </summary>
+        public static string ResolveKbsRead(params string[] parts)
+        {
+            foreach (var root in AppPaths.KeyboardsSearchPaths)
+            {
+                var candidate = Path.Combine(new[] { root }.Concat(parts).ToArray());
+                if (File.Exists(candidate) || Directory.Exists(candidate))
+                    return candidate;
+            }
+
+            var fallback = new List<string> { AppPaths.UserKeyboardsDir };
+            fallback.AddRange(parts);
+            return Path.Combine(fallback.ToArray());
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> if the logical keyboards-relative path exists under any of the
+        /// configured roots.
+        /// </summary>
+        public static bool AnyKbsExists(params string[] parts)
+        {
+            foreach (var root in AppPaths.KeyboardsSearchPaths)
+            {
+                var candidate = Path.Combine(new[] { root }.Concat(parts).ToArray());
+                if (File.Exists(candidate) || Directory.Exists(candidate))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Enumerates subdirectories of a keyboards-relative path across all read roots, with
+        /// later-priority roots filtered out when a name collision exists (user dir overrides
+        /// bundled).
+        /// </summary>
+        /// <param name="parts">The parts that make up the parent path from the keyboards folder.</param>
+        public static IReadOnlyList<DirectoryInfo> EnumerateKbsDirectories(params string[] parts)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var result = new List<DirectoryInfo>();
+
+            foreach (var root in AppPaths.KeyboardsSearchPaths)
+            {
+                var dirPath = Path.Combine(new[] { root }.Concat(parts).ToArray());
+                if (!Directory.Exists(dirPath)) continue;
+                foreach (var child in new DirectoryInfo(dirPath).EnumerateDirectories())
+                {
+                    if (seen.Add(child.Name)) result.Add(child);
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Enumerates files in a keyboards-relative path across all read roots. Later-priority
+        /// roots are filtered out when a name collision exists (user dir overrides bundled).
+        /// </summary>
+        public static IReadOnlyList<FileInfo> EnumerateKbsFiles(params string[] parts)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var result = new List<FileInfo>();
+
+            foreach (var root in AppPaths.KeyboardsSearchPaths)
+            {
+                var dirPath = Path.Combine(new[] { root }.Concat(parts).ToArray());
+                if (!Directory.Exists(dirPath)) continue;
+                foreach (var file in new DirectoryInfo(dirPath).EnumerateFiles())
+                {
+                    if (seen.Add(file.Name)) result.Add(file);
+                }
+            }
+            return result;
         }
 
         /// <summary>
@@ -150,11 +246,9 @@ namespace ThoNohT.NohBoard.Extra
         public static string GetStyleImagePath(string filename)
         {
             var s = GlobalSettings.Settings;
-            return Path.Combine(
-                s.LoadedGlobalStyle
-                    ? FromKbs(Constants.GlobalStylesFolder, Constants.ImagesFolder).FullName
-                    : FromKbs(s.LoadedCategory, Constants.ImagesFolder).FullName,
-                filename);
+            return s.LoadedGlobalStyle
+                ? ResolveKbsRead(Constants.GlobalStylesFolder, Constants.ImagesFolder, filename)
+                : ResolveKbsRead(s.LoadedCategory, Constants.ImagesFolder, filename);
         }
     }
 }

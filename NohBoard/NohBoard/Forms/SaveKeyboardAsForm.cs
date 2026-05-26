@@ -51,12 +51,10 @@ namespace ThoNohT.NohBoard.Forms
         /// </summary>
         private void SaveKeyboardAsForm_Load(object sender, EventArgs e)
         {
-            var root = FileHelper.FromKbs();
-
-            // If there are no keyboard files, no initialization is required.
-            if (!root.Exists) return;
-
-            this.CategoryCombo.Items.AddRange(root.EnumerateDirectories().Select(x => (object)x.Name).ToArray());
+            // Show categories that exist anywhere (so users can "Save As" into an existing
+            // bundled category - the actual write lands in the user dir).
+            var categories = FileHelper.EnumerateKbsDirectories().Select(x => x.Name).ToArray();
+            this.CategoryCombo.Items.AddRange(categories.Cast<object>().ToArray());
 
             this.CategoryCombo.Text = GlobalSettings.Settings.LoadedCategory;
             this.DefinitionCombo.Text = GlobalSettings.Settings.LoadedKeyboard;
@@ -68,11 +66,10 @@ namespace ThoNohT.NohBoard.Forms
         /// <param name="category">The category to load the keyboards from.</param>
         private void PopulateKeyboards(string category)
         {
-            var root = FileHelper.FromKbs(category);
-            if (!root.Exists) return;
-
+            if (string.IsNullOrEmpty(category)) return;
+            var defs = FileHelper.EnumerateKbsDirectories(category).Select(x => x.Name).ToArray();
             this.DefinitionCombo.Items.Clear();
-            this.DefinitionCombo.Items.AddRange(root.EnumerateDirectories().Select(x => (object)x.Name).ToArray());
+            this.DefinitionCombo.Items.AddRange(defs.Cast<object>().ToArray());
         }
 
         /// <summary>
@@ -109,8 +106,9 @@ namespace ThoNohT.NohBoard.Forms
                 return;
             }
 
-            // Check if the name already exists.
-            if (FileHelper.FromKbs(this.SelectedCategory, this.SelectedDefinition).Exists)
+            // Check if the name already exists anywhere (bundled, user, or dev up-walk). The
+            // actual save still lands in the user-writable root.
+            if (FileHelper.AnyKbsExists(this.SelectedCategory, this.SelectedDefinition))
             {
                 var result = MessageBox.Show(
                     $"Keyboard {this.SelectedCategory}/{this.SelectedDefinition} already exists, " +

@@ -25,6 +25,7 @@ namespace ThoNohT.NohBoard.Extra
     using System.Windows.Forms;
     using Hooking;
     using Keyboard;
+    using ThoNohT.NohBoard.Logging;
     using static Hooking.Interop.Defines;
 
     /// <summary>
@@ -226,6 +227,25 @@ namespace ThoNohT.NohBoard.Extra
 
         #endregion Editing
 
+        #region UX
+
+        /// <summary>
+        /// When <c>true</c>, NohBoard auto-loads the bundled <c>Normal/us_intl</c> layout the
+        /// first time it starts so a new user immediately sees a keyboard instead of an empty
+        /// window. Once a user explicitly picks a layout, this flag has no further effect.
+        /// </summary>
+        [DataMember]
+        public bool AutoLoadDefaultOnFirstRun { get; set; } = true;
+
+        /// <summary>
+        /// When <c>true</c>, NohBoard hits GitHub on startup to compare versions and warns
+        /// the user if a newer release is available. Disable to skip the network call entirely.
+        /// </summary>
+        [DataMember]
+        public bool CheckForUpdates { get; set; } = true;
+
+        #endregion UX
+
         #region Methods
 
         /// <summary>
@@ -233,17 +253,30 @@ namespace ThoNohT.NohBoard.Extra
         /// </summary>
         public static void Save()
         {
-            FileHelper.Serialize(Constants.SettingsFilename, Settings);
+            try
+            {
+                AppPaths.EnsureUserDataDirExists();
+                FileHelper.Serialize(Constants.SettingsFilename, Settings);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Failed to save settings to " + Constants.SettingsFilename, ex);
+                throw;
+            }
         }
 
         /// <summary>
-        /// Loads the settings.
+        /// Loads the settings, performing one-time migrations from legacy locations.
         /// </summary>
         public static bool Load()
         {
+            AppPaths.EnsureUserDataDirExists();
+            MigrateLegacySettingsFile();
+
             // Only load if the file exists.
             if (!File.Exists(Constants.SettingsFilename))
             {
+                Log.Info($"No settings file at {Constants.SettingsFilename}, starting with defaults.");
                 Settings = new GlobalSettings();
                 return true;
             }
@@ -254,13 +287,43 @@ namespace ThoNohT.NohBoard.Extra
 
                 Func<Rectangle, Point> getCenter = r => r.Location + new Size(r.Width / 2, r.Height / 2);
                 MouseState.SetMouseFromCenter(Settings.MouseFromCenter, Screen.AllScreens.Select(x => (x.Bounds, getCenter(x.Bounds))).ToList());
+                Log.Info($"Settings loaded from {Constants.SettingsFilename}.");
                 return true;
             }
             catch (Exception ex)
             {
                 Errors = ex.Message;
                 Settings = new GlobalSettings();
+                Log.Error("Failed to deserialize " + Constants.SettingsFilename, ex);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// If a <c>NohBoard.json</c> exists next to the exe but not at the new
+        /// <see cref="AppPaths.SettingsPath"/> location, move it. Failure is non-fatal: the
+        /// legacy file is left untouched so the user can retry, and the load proceeds with
+        /// defaults.
+        /// </summary>
+        private static void MigrateLegacySettingsFile()
+        {
+            if (AppPaths.PortableMode) return;
+
+            try
+            {
+                var legacy = AppPaths.LegacySettingsPath;
+                var target = AppPaths.SettingsPath;
+                if (string.Equals(legacy, target, StringComparison.OrdinalIgnoreCase)) return;
+                if (!File.Exists(legacy) || File.Exists(target)) return;
+
+                AppPaths.EnsureUserDataDirExists();
+                File.Copy(legacy, target, overwrite: false);
+                File.Delete(legacy);
+                Log.Info($"Migrated legacy settings file {legacy} -> {target}.");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Settings migration failed; legacy file left in place.", ex);
             }
         }
 

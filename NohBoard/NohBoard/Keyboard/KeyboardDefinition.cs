@@ -251,8 +251,7 @@ namespace ThoNohT.NohBoard.Keyboard
         public void Save()
         {
             var filename = Path.Combine(
-                Constants.ExePath,
-                Constants.KeyboardsFolder,
+                AppPaths.UserKeyboardsDir,
                 this.Category,
                 this.Name,
                 Constants.DefinitionFilename);
@@ -272,15 +271,13 @@ namespace ThoNohT.NohBoard.Keyboard
         /// <returns>The loaded <see cref="KeyboardDefinition"/>.</returns>
         public static KeyboardDefinition Load(string category, string name)
         {
-            var categoryPath = FileHelper.FromKbs(category);
-            if (!categoryPath.Exists)
+            if (!FileHelper.AnyKbsExists(category))
                 throw new ArgumentException($"Category {category} does not exist.");
 
-            var keyboardPath = Path.Combine(categoryPath.FullName, name);
-            if (!Directory.Exists(keyboardPath))
+            if (!FileHelper.AnyKbsExists(category, name))
                 throw new ArgumentException($"Keyboard {name} does not exist.");
 
-            var filePath = Path.Combine(keyboardPath, Constants.DefinitionFilename);
+            var filePath = FileHelper.ResolveKbsRead(category, name, Constants.DefinitionFilename);
             if (!File.Exists(filePath))
                 throw new Exception($"Keyboard definition file not found for {category}/{name}.");
 

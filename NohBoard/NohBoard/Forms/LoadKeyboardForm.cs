@@ -175,13 +175,8 @@ namespace ThoNohT.NohBoard.Forms
         /// </summary>
         private void LoadKeyboardForm_Load(object sender, System.EventArgs e)
         {
-            // Load the list of global styles
-            var globalStylesRoot = FileHelper.FromKbs(Constants.GlobalStylesFolder);
-
-            if (!globalStylesRoot.Exists)
-                globalStylesRoot.Create();
-
-            this.globalStyles = globalStylesRoot.EnumerateFiles()
+            // Load the list of global styles from every read root (user dir wins on conflicts).
+            this.globalStyles = FileHelper.EnumerateKbsFiles(Constants.GlobalStylesFolder)
                 .Where(x => x.Extension == KeyboardStyle.StyleExtension)
                 .Select(
                     x => new StyleInfo
@@ -191,15 +186,17 @@ namespace ThoNohT.NohBoard.Forms
                     })
                 .ToList();
 
-            var root = FileHelper.FromKbs();
+            // Union of categories across user dir + bundled + dev up-walk.
+            var categories = FileHelper.EnumerateKbsDirectories()
+                .Select(x => x.Name)
+                .Where(name => name != Constants.GlobalStylesFolder)
+                .ToArray();
 
-            // If there are no keyboard files, no initialization is required.
-            if (!root.Exists) return;
+            // If there are no keyboard files anywhere, no initialization is required.
+            if (categories.Length == 0) return;
 
             this.CategoryCombo.Items.Clear();
-            this.CategoryCombo.Items.AddRange(
-                root.EnumerateDirectories()
-                    .Select(x => (object)x.Name).Where(x => (string)x != Constants.GlobalStylesFolder).ToArray());
+            this.CategoryCombo.Items.AddRange(categories.Cast<object>().ToArray());
 
             if (GlobalSettings.Settings.LoadedCategory != null)
             {
@@ -244,7 +241,21 @@ namespace ThoNohT.NohBoard.Forms
             if (result != DialogResult.Yes)
                 return;
 
-            FileHelper.FromKbs(this.SelectedCategory, this.SelectedDefinition).Delete(true);
+            // Only attempt to delete from the user-writable root. Bundled layouts are read-only.
+            var userCopy = FileHelper.FromKbs(this.SelectedCategory, this.SelectedDefinition);
+            if (userCopy.Exists)
+            {
+                userCopy.Delete(true);
+            }
+            else
+            {
+                MessageBox.Show(
+                    $"This keyboard is bundled with NohBoard and cannot be deleted. " +
+                    $"Save a copy under a different name and edit that one instead.",
+                    "Cannot delete bundled keyboard",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
             this.LoadKeyboardForm_Load(null, null);
         }
 
@@ -262,7 +273,10 @@ namespace ThoNohT.NohBoard.Forms
                 if (this.StyleList.Items.Count == 0) this.DefinitionChanged?.Invoke(kbDef, null, false);
             } catch (Exception ex)
             {
-                MessageBox.Show($"Failed to load keyboard {this.SelectedDefinition}: {ex.Message}");
+                ErrorReporter.Show(
+                    "Could not load keyboard",
+                    $"Failed to load keyboard {this.SelectedDefinition}.",
+                    ex);
                 return;
             }
         }
@@ -281,7 +295,10 @@ namespace ThoNohT.NohBoard.Forms
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to load keyboard {this.SelectedDefinition}: {ex.Message}");
+                ErrorReporter.Show(
+                    "Could not load keyboard",
+                    $"Failed to load keyboard {this.SelectedDefinition}.",
+                    ex);
                 return;
             }
         }
@@ -306,15 +323,17 @@ namespace ThoNohT.NohBoard.Forms
         /// </summary>
         private void PopulateKeyboards()
         {
-            var root = FileHelper.FromKbs(this.SelectedCategory);
-            if (!root.Exists) return;
+            if (this.SelectedCategory == null) return;
+
+            // Union across roots: only include subfolders that actually contain a keyboard.json,
+            // and dedupe by name (user dir wins).
+            var defs = FileHelper.EnumerateKbsDirectories(this.SelectedCategory)
+                .Where(x => File.Exists(Path.Combine(x.FullName, Constants.DefinitionFilename)))
+                .Select(x => x.Name)
+                .ToArray();
 
             this.DefinitionsList.Items.Clear();
-            this.DefinitionsList.Items.AddRange(
-                root.EnumerateDirectories()
-                    .Where(x => File.Exists(Path.Combine(x.FullName, Constants.DefinitionFilename)))
-                    .Select(x => (object)x.Name)
-                    .ToArray());
+            this.DefinitionsList.Items.AddRange(defs.Cast<object>().ToArray());
 
             // If the form is still loading, don't set the selected index.
             if (this.DefinitionsList.Items.Count > 0 && this.loaded)
@@ -331,9 +350,8 @@ namespace ThoNohT.NohBoard.Forms
             if (this.SelectedDefinition == null)
                 return;
 
-            var specificStylesRoot = FileHelper.FromKbs(this.SelectedCategory, this.SelectedDefinition);
-
-            var specificStyles = specificStylesRoot.EnumerateFiles()
+            // Union of definition-specific styles across all roots (user overrides bundled).
+            var specificStyles = FileHelper.EnumerateKbsFiles(this.SelectedCategory, this.SelectedDefinition)
                 .Where(x => x.Extension == KeyboardStyle.StyleExtension)
                 .Select(
                     x => new StyleInfo

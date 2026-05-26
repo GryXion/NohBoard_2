@@ -17,10 +17,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace ThoNohT.NohBoard
 {
-    using System.Diagnostics;
+    using System;
     using System.Drawing;
     using System.IO;
     using System.Windows.Forms;
+    using ThoNohT.NohBoard.Extra;
 
     /// <summary>
     /// Contains constants used throughout the application.
@@ -58,19 +59,26 @@ namespace ThoNohT.NohBoard
         public const int DefaultElementSize = 40;
 
         /// <summary>
-        /// A GDI+ graphics context.
+        /// A shared GDI+ graphics context tied to the screen. Used for offline measurements only
+        /// (e.g. text metrics). Replaces a previous implementation that leaked a <see cref="Form"/>
+        /// on every property access.
         /// </summary>
-        public static Graphics G => Graphics.FromHwndInternal(new Form().Handle);
+        public static Graphics G => Graphics.FromHwnd(IntPtr.Zero);
 
         /// <summary>
-        /// The filename of the settings file.
+        /// The full path of the settings file. Routes through <see cref="AppPaths"/> so portable
+        /// mode (<c>--portable</c>) keeps settings next to the exe and the default installed
+        /// mode keeps them under <c>%LOCALAPPDATA%\NohBoard\</c>.
         /// </summary>
-        public static string SettingsFilename => "NohBoard.json";
+        public static string SettingsFilename => AppPaths.SettingsPath;
 
         /// <summary>
-        /// Returns the path this executable is running in.
+        /// Returns the directory that contains the running executable. Uses
+        /// <see cref="AppContext.BaseDirectory"/> so it works correctly under single-file
+        /// publishing and trimming (whereas <c>Process.MainModule.FileName</c> requires that
+        /// the process binary be accessible, which is brittle inside a self-extracting bundle).
         /// </summary>
-        public static string ExePath => Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
+        public static string ExePath => AppPaths.BaseDirectory;
 
         /// <summary>
         /// The brush to use for the background of highlighted elements.

@@ -69,19 +69,26 @@ namespace ThoNohT.NohBoard.Forms
         /// </summary>
         private void FillStyles()
         {
-            var sRoot = FileHelper.FromKbs().FullName;
+            // Writes always go to the user-writable root.
             this.rootPath = this.chkGlobal.Checked
-                ? Path.Combine(sRoot, Constants.GlobalStylesFolder)
-                : Path.Combine(sRoot, GlobalSettings.CurrentDefinition.Category, GlobalSettings.CurrentDefinition.Name);
+                ? Path.Combine(AppPaths.UserKeyboardsDir, Constants.GlobalStylesFolder)
+                : Path.Combine(
+                    AppPaths.UserKeyboardsDir,
+                    GlobalSettings.CurrentDefinition.Category,
+                    GlobalSettings.CurrentDefinition.Name);
+
             this.StyleCombo.Items.Clear();
 
-            var root = new DirectoryInfo(this.rootPath);
-
-            // If there are no style files, no initialization is required.
-            if (!root.Exists) return;
+            // List existing styles across all read roots so users see naming collisions even if
+            // the existing style lives in the bundled folder.
+            var styles = this.chkGlobal.Checked
+                ? FileHelper.EnumerateKbsFiles(Constants.GlobalStylesFolder)
+                : FileHelper.EnumerateKbsFiles(
+                    GlobalSettings.CurrentDefinition.Category,
+                    GlobalSettings.CurrentDefinition.Name);
 
             this.StyleCombo.Items.AddRange(
-                root.EnumerateFiles().Where(x => x.Extension == KeyboardStyle.StyleExtension)
+                styles.Where(x => x.Extension == KeyboardStyle.StyleExtension)
                     .Select(x => (object)x.Name.Substring(0, x.Name.Length - KeyboardStyle.StyleExtension.Length))
                     .ToArray());
 
@@ -104,8 +111,16 @@ namespace ThoNohT.NohBoard.Forms
             if (string.IsNullOrWhiteSpace(this.SelectedStyle))
                 return;
 
-            // Check if the name already exists.
-            if (File.Exists(Path.Combine(this.rootPath, $"{this.SelectedStyle}{KeyboardStyle.StyleExtension}")))
+            // Check if the name already exists in any read root (user dir, bundled, dev up-walk).
+            var collides = this.chkGlobal.Checked
+                ? FileHelper.AnyKbsExists(
+                    Constants.GlobalStylesFolder,
+                    $"{this.SelectedStyle}{KeyboardStyle.StyleExtension}")
+                : FileHelper.AnyKbsExists(
+                    GlobalSettings.CurrentDefinition.Category,
+                    GlobalSettings.CurrentDefinition.Name,
+                    $"{this.SelectedStyle}{KeyboardStyle.StyleExtension}");
+            if (collides)
             {
                 var result = MessageBox.Show(
                     $"Style {this.SelectedStyle} already exists, do you want to overwrite it?",

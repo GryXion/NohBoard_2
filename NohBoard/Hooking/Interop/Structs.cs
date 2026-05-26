@@ -17,104 +17,94 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace ThoNohT.NohBoard.Hooking.Interop
 {
+    using System;
     using System.Runtime.InteropServices;
 
     /// <summary>
-    /// Contains structs used for interop.
+    /// Structs used for low-level keyboard and mouse interop.
     /// </summary>
+    /// <remarks>
+    /// IMPORTANT: <c>ExtraInfo</c> is <c>ULONG_PTR</c> in the native header, which is pointer-sized
+    /// (8 bytes on x64). Declaring it as <c>int</c> (4 bytes), as the original code did, made the
+    /// managed struct 4 bytes smaller than its native counterpart on Windows 64-bit, leading to
+    /// silent marshalling corruption when calling <see cref="Marshal.PtrToStructure"/>. This was
+    /// the root cause of NohBoard failing to register key presses on Windows 11.
+    /// </remarks>
     internal static class Structs
     {
         /// <summary>
-        /// The Point structure defines the X- and Y- coordinates of a point.
+        /// A point with X and Y coordinates as used by the low-level hook structs.
         /// </summary>
-        /// <remarks>
-        /// http://msdn.microsoft.com/library/default.asp?url=/library/en-us/gdi/rectangl_0tiq.asp
-        /// </remarks>
         [StructLayout(LayoutKind.Sequential)]
         internal struct Point
         {
-            /// <summary>
-            /// Specifies the X-coordinate of the point.
-            /// </summary>
             public int X;
-            /// <summary>
-            /// Specifies the Y-coordinate of the point.
-            /// </summary>
             public int Y;
         }
 
         /// <summary>
-        /// The MSLLHOOKSTRUCT structure contains information about a low-level keyboard input event.
+        /// Low-level mouse hook information (<c>MSLLHOOKSTRUCT</c>).
         /// </summary>
         [StructLayout(LayoutKind.Sequential)]
         internal struct MouseLLHookStruct
         {
             /// <summary>
-            /// Specifies a Point structure that contains the X- and Y-coordinates of the cursor, in screen coordinates.
+            /// Cursor coordinates in screen space.
             /// </summary>
             public Point Point;
+
             /// <summary>
-            /// If the message is WM_MOUSEWHEEL, the high-order word of this member is the wheel delta.
-            /// The low-order word is reserved. A positive value indicates that the wheel was rotated forward,
-            /// away from the user; a negative value indicates that the wheel was rotated backward, toward the user.
-            /// One wheel click is defined as WHEEL_DELTA, which is 120.
-            ///If the message is WM_XBUTTONDOWN, WM_XBUTTONUP, WM_XBUTTONDBLCLK, WM_NCXBUTTONDOWN, WM_NCXBUTTONUP,
-            /// or WM_NCXBUTTONDBLCLK, the high-order word specifies which X button was pressed or released,
-            /// and the low-order word is reserved. This value can be one or more of the following values. Otherwise, MouseData is not used.
-            ///XBUTTON1
-            ///The first X button was pressed or released.
-            ///XBUTTON2
-            ///The second X button was pressed or released.
+            /// Wheel delta for <c>WM_MOUSEWHEEL</c>/<c>WM_MOUSEHWHEEL</c> in the high-order word,
+            /// or which X button for <c>WM_XBUTTONDOWN</c>/<c>WM_XBUTTONUP</c>.
             /// </summary>
             public int MouseData;
+
             /// <summary>
-            /// Specifies the event-injected flag. An application can use the following value to test the mouse Flags. Value Purpose
-            ///LLMHF_INJECTED Test the event-injected flag.
-            ///0
-            ///Specifies whether the event was injected. The value is 1 if the event was injected; otherwise, it is 0.
-            ///1-15
-            ///Reserved.
+            /// Event-injected flag.
             /// </summary>
             public int Flags;
+
             /// <summary>
-            /// Specifies the Time stamp for this message.
+            /// Time stamp for this message.
             /// </summary>
             public int Time;
+
             /// <summary>
-            /// Specifies extra information associated with the message.
+            /// Extra information associated with the message (<c>ULONG_PTR</c>).
             /// </summary>
-            public int ExtraInfo;
+            public UIntPtr ExtraInfo;
         }
 
         /// <summary>
-        /// The KBDLLHOOKSTRUCT structure contains information about a low-level keyboard input event.
+        /// Low-level keyboard hook information (<c>KBDLLHOOKSTRUCT</c>).
         /// </summary>
-        /// <remarks>
-        /// http://msdn.microsoft.com/library/default.asp?url=/library/en-us/winui/winui/windowsuserinterface/windowing/hooks/hookreference/hookstructures/cwpstruct.asp
-        /// </remarks>
         [StructLayout(LayoutKind.Sequential)]
         internal struct KeyboardHookStruct
         {
             /// <summary>
-            /// Specifies a virtual-key code. The code must be a value in the range 1 to 254.
+            /// Virtual-key code (1..254).
             /// </summary>
             public int VirtualKeyCode;
+
             /// <summary>
-            /// Specifies a hardware scan code for the key.
+            /// Hardware scan code for the key.
             /// </summary>
             public int ScanCode;
+
             /// <summary>
-            /// Specifies the extended-key flag, event-injected flag, context code, and transition-state flag.
+            /// Extended-key flag, event-injected flags, context code, and transition-state flag.
             /// </summary>
             public int Flags;
+
             /// <summary>
-            /// Specifies the Time stamp for this message.
+            /// Time stamp for this message.
             /// </summary>
             public int Time;
+
             /// <summary>
-            /// Specifies extra information associated with the message.
+            /// Extra information associated with the message (<c>ULONG_PTR</c>).
             /// </summary>
-            public int ExtraInfo;
+            public UIntPtr ExtraInfo;
         }
     }
 }

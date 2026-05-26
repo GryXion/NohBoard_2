@@ -27,6 +27,7 @@ namespace ThoNohT.NohBoard.Forms
     using System.Diagnostics;
     using System.Drawing;
     using System.Drawing.Text;
+    using System.IO;
     using System.Linq;
     using System.Net.Http;
     using System.Runtime.Serialization.Json;
@@ -35,6 +36,7 @@ namespace ThoNohT.NohBoard.Forms
     using System.Windows.Forms;
     using System.Xml;
     using ThoNohT.NohBoard.Keyboard.Styles;
+    using ThoNohT.NohBoard.Logging;
     using Version = NohBoard.Version;
 
     /// <summary>
@@ -70,7 +72,17 @@ namespace ThoNohT.NohBoard.Forms
         public MainForm()
         {
             this.InitializeComponent();
-            this.SetStyle(ControlStyles.ResizeRedraw, true);
+            // OptimizedDoubleBuffer + AllPaintingInWmPaint + UserPaint together give
+            // tear-free rendering on Windows 11 without the extra cost of the legacy
+            // DoubleBuffered alone (which only allocates a back buffer). ResizeRedraw
+            // ensures the keyboard rerenders cleanly during DPI changes.
+            this.SetStyle(
+                ControlStyles.ResizeRedraw |
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.UserPaint |
+                ControlStyles.OptimizedDoubleBuffer,
+                true);
+            this.UpdateStyles();
         }
 
         #endregion Constructors
@@ -78,31 +90,40 @@ namespace ThoNohT.NohBoard.Forms
         #region Version check
 
         /// <summary>
-        /// Attempts to retrieve the latest version from the update site.
+        /// URL of the JSON document published on GitHub Gist that exposes the latest released
+        /// NohBoard version. Returned shape is documented by <see cref="VersionInfo"/>.
         /// </summary>
-        public Task GetLatestVersion()
+        private const string UpdateCheckUrl =
+            "https://gist.githubusercontent.com/ThoNohT/3181561f8148fb6b865f88714e975154/raw/nohboard_version.json";
+
+        /// <summary>
+        /// Hardened, fire-and-forget background update check. Honors the
+        /// <see cref="GlobalSettings.CheckForUpdates"/> toggle, applies a short HTTP timeout so
+        /// offline users don't pay startup latency, and routes all exceptions through
+        /// <see cref="Log"/> instead of leaving them as unobserved task faults.
+        /// </summary>
+        public void StartUpdateCheck()
         {
-            return new Task(
-                () =>
+            if (GlobalSettings.Settings is { CheckForUpdates: false })
+            {
+                Log.Info("Update check skipped (GlobalSettings.CheckForUpdates is false).");
+                return;
+            }
+
+            Task.Run(async () =>
+            {
+                try
                 {
-                    var updateUrl =
-                        "https://gist.githubusercontent.com/ThoNohT/3181561f8148fb6b865f88714e975154/raw/nohboard_version.json";
+                    using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                    await using var stream = await client.GetStreamAsync(UpdateCheckUrl).ConfigureAwait(false);
+                    using var reader = JsonReaderWriterFactory.CreateJsonReader(
+                        stream,
+                        Encoding.UTF8,
+                        XmlDictionaryReaderQuotas.Max,
+                        dictionaryReader => { });
 
-                    VersionInfo downloadVersionInfo(string url)
-                    {
-                        var serializer = new DataContractJsonSerializer(typeof(VersionInfo));
-                        using (var client = new HttpClient())
-                        using (var reader = JsonReaderWriterFactory.CreateJsonReader(
-                            client.GetStreamAsync(updateUrl).Result,
-                            Encoding.UTF8,
-                            XmlDictionaryReaderQuotas.Max,
-                            dictionaryReader => { }))
-                        {
-                            return (VersionInfo)serializer.ReadObject(reader);
-                        }
-                    }
-
-                    var versionInfo = downloadVersionInfo(updateUrl);
+                    var serializer = new DataContractJsonSerializer(typeof(VersionInfo));
+                    var versionInfo = (VersionInfo)serializer.ReadObject(reader);
 
                     if ((versionInfo.Major > Version.Major) ||
                         (versionInfo.Major == Version.Major && versionInfo.Minor > Version.Minor) ||
@@ -110,8 +131,18 @@ namespace ThoNohT.NohBoard.Forms
                          && versionInfo.Patch > Version.Patch))
                     {
                         this.latestVersion = versionInfo;
+                        Log.Info($"Update check: newer version available -> {versionInfo.Major}.{versionInfo.Minor}.{versionInfo.Patch}.");
                     }
-                });
+                    else
+                    {
+                        Log.Info("Update check: up to date.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("Update check failed (network/firewall/timeout?).", ex);
+                }
+            });
         }
 
         #endregion Version check
@@ -163,6 +194,7 @@ namespace ThoNohT.NohBoard.Forms
             this.ClientSize = new Size(GlobalSettings.CurrentDefinition.Width, GlobalSettings.CurrentDefinition.Height);
 
             this.ResetBackBrushes();
+            this.UpdateEditStatusStrip();
 
             return missingFonts;
         }
@@ -308,7 +340,10 @@ namespace ThoNohT.NohBoard.Forms
 
                         this.LoadKeyboard();
 
-                        MessageBox.Show(ex.Message + Environment.NewLine + "Reverted keyboard change.");
+                        ErrorReporter.Show(
+                            "Could not load keyboard",
+                            "Reverted to the previous keyboard.",
+                            ex);
                     }
                 };
 
@@ -350,21 +385,45 @@ namespace ThoNohT.NohBoard.Forms
         /// </summary>
         private void MainForm_Load(object sender, EventArgs e)
         {
-            // Load the settings
+            // Track whether the settings file existed BEFORE Load() ran so we can detect a first
+            // launch and (optionally) auto-load the bundled default keyboard.
+            var wasFirstRun = !File.Exists(AppPaths.SettingsPath);
+
+            // Load the settings.
             if (!GlobalSettings.Load())
             {
-                MessageBox.Show(
-                    this,
-                    $"Failed to load the settings: {GlobalSettings.Errors}",
-                    "Failed to load settings");
+                ErrorReporter.Show(
+                    "Failed to load settings",
+                    $"NohBoard could not read its settings file at {AppPaths.SettingsPath}. " +
+                    "Starting with defaults.",
+                    new Exception(GlobalSettings.Errors));
             }
+
+            // Persist the resolved set of locations on every launch - users frequently ask "where
+            // does NohBoard keep its files" and this means the log on disk always knows.
+            Log.Info($"First run: {wasFirstRun}. LoadedCategory={GlobalSettings.Settings.LoadedCategory}, " +
+                $"LoadedKeyboard={GlobalSettings.Settings.LoadedKeyboard}, LoadedStyle={GlobalSettings.Settings.LoadedStyle}");
 
             this.Location = new Point(GlobalSettings.Settings.X, GlobalSettings.Settings.Y);
             var title = GlobalSettings.Settings.WindowTitle;
 
             this.Text = string.IsNullOrWhiteSpace(title) ? $"NohBoard {Version.Get}" : title;
 
-            this.GetLatestVersion().Start();
+            this.StartUpdateCheck();
+
+            // First-run convenience: if no keyboard was previously loaded and the bundled
+            // default exists, auto-load it so the new user immediately sees something.
+            if (wasFirstRun
+                && GlobalSettings.Settings.AutoLoadDefaultOnFirstRun
+                && GlobalSettings.Settings.LoadedCategory == null
+                && GlobalSettings.Settings.LoadedKeyboard == null
+                && FileHelper.AnyKbsExists("Normal", "us_intl", Constants.DefinitionFilename))
+            {
+                Log.Info("First run detected, auto-loading Normal/us_intl.");
+                GlobalSettings.Settings.LoadedCategory = "Normal";
+                GlobalSettings.Settings.LoadedKeyboard = "us_intl";
+                GlobalSettings.Settings.AutoLoadDefaultOnFirstRun = false;
+            }
 
             // Load a definition if possible.
             if (GlobalSettings.Settings.LoadedKeyboard != null && GlobalSettings.Settings.LoadedCategory != null)
@@ -373,12 +432,15 @@ namespace ThoNohT.NohBoard.Forms
                 {
                     GlobalSettings.Settings.UpdateDefinition(KeyboardDefinition
                         .Load(GlobalSettings.Settings.LoadedCategory, GlobalSettings.Settings.LoadedKeyboard), false);
+                    Log.Info($"Loaded keyboard definition {GlobalSettings.Settings.LoadedCategory}/" +
+                        $"{GlobalSettings.Settings.LoadedKeyboard}.");
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(
-                        "There was an error loading the saved keyboard definition file:" +
-                        $"{Environment.NewLine}{ex.Message}");
+                    ErrorReporter.Show(
+                        "Could not load keyboard",
+                        "There was an error loading the saved keyboard definition file.",
+                        ex);
                     GlobalSettings.Settings.LoadedCategory = null;
                     GlobalSettings.Settings.LoadedKeyboard = null;
                 }
@@ -394,22 +456,33 @@ namespace ThoNohT.NohBoard.Forms
                         GlobalSettings.Settings.LoadedGlobalStyle), false);
                     this.LoadKeyboard();
                     this.ResetBackBrushes();
+                    Log.Info($"Loaded style {GlobalSettings.Settings.LoadedStyle} " +
+                        $"(global={GlobalSettings.Settings.LoadedGlobalStyle}).");
                 }
-                catch
+                catch (Exception ex)
                 {
+                    var failedStyleName = GlobalSettings.Settings.LoadedStyle;
                     GlobalSettings.Settings.LoadedStyle = null;
-                    MessageBox.Show(
-                        $"Failed to load style {GlobalSettings.Settings.LoadedStyle}, loading default style.",
-                        "Error loading style.");
+                    ErrorReporter.Show(
+                        "Could not load style",
+                        $"Failed to load style {failedStyleName}, loading default style.",
+                        ex);
                 }
 
-                // Enable the mouse hook only if there are mouse keys on the screen.
+                // Enable the mouse/keyboard hooks based on the loaded definition. We do this
+                // explicitly (rather than relying on LoadKeyboard) so we can surface install
+                // failures via the new error reporter.
                 if (GlobalSettings.CurrentDefinition.Elements.Any(x => !(x is KeyboardKeyDefinition)))
-                    HookManager.EnableMouseHook();
+                    this.SafelyEnableMouseHook();
 
-                // Enable the keyboard hook only if there are keyboard keys on the screen.
                 if (GlobalSettings.CurrentDefinition.Elements.Any(x => x is KeyboardKeyDefinition))
-                    HookManager.EnableKeyboardHook();
+                    this.SafelyEnableKeyboardHook();
+            }
+
+            // Larger default window for the empty-state hint when no keyboard is loaded.
+            if (GlobalSettings.CurrentDefinition == null)
+            {
+                this.ClientSize = new Size(480, 240);
             }
 
             this.UpdateTimer.Interval = GlobalSettings.Settings.UpdateInterval;
@@ -418,6 +491,50 @@ namespace ThoNohT.NohBoard.Forms
 
             this.Activate();
             this.ApplySettings();
+            Log.Info($"MainForm loaded. KeyboardHookInstalled={HookManager.KeyboardHookInstalled}, " +
+                $"MouseHookInstalled={HookManager.MouseHookInstalled}.");
+        }
+
+        /// <summary>
+        /// Installs the keyboard hook, surfacing any Win32 error via <see cref="ErrorReporter"/>
+        /// instead of bubbling an unhandled exception.
+        /// </summary>
+        private void SafelyEnableKeyboardHook()
+        {
+            try
+            {
+                HookManager.EnableKeyboardHook();
+                Log.Info("Keyboard hook installed.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("EnableKeyboardHook failed.", ex);
+                ErrorReporter.Show(
+                    "Could not install keyboard hook",
+                    "NohBoard could not subscribe to global keyboard events. Key presses will not be shown.",
+                    ex);
+            }
+        }
+
+        /// <summary>
+        /// Installs the mouse hook, surfacing any Win32 error via <see cref="ErrorReporter"/>
+        /// instead of bubbling an unhandled exception.
+        /// </summary>
+        private void SafelyEnableMouseHook()
+        {
+            try
+            {
+                HookManager.EnableMouseHook();
+                Log.Info("Mouse hook installed.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("EnableMouseHook failed.", ex);
+                ErrorReporter.Show(
+                    "Could not install mouse hook",
+                    "NohBoard could not subscribe to global mouse events. Mouse buttons will not be shown.",
+                    ex);
+            }
         }
 
         /// <summary>
@@ -437,7 +554,7 @@ namespace ThoNohT.NohBoard.Forms
         /// </summary>
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            if (GlobalSettings.UnsavedDefinitionChanges || GlobalSettings.UnsavedStyleChanges && !CrashHandler.Crashed)
+            if ((GlobalSettings.UnsavedDefinitionChanges || GlobalSettings.UnsavedStyleChanges) && !CrashHandler.Crashed)
             {
                 var result = MessageBox.Show(
                     "You have unsaved changes. If you exit now you will lose them. Are you sure you want to exit?",
@@ -591,7 +708,10 @@ namespace ThoNohT.NohBoard.Forms
             e.Graphics.Clear(GlobalSettings.CurrentStyle.BackgroundColor);
 
             if (GlobalSettings.CurrentDefinition == null || !this.backBrushes.Any())
+            {
+                this.DrawEmptyStateHint(e.Graphics);
                 return;
+            }
 
             // Fill the appropriate back brush.
             e.Graphics.FillRectangle(
@@ -685,6 +805,44 @@ namespace ThoNohT.NohBoard.Forms
         }
 
         /// <summary>
+        /// Draws the first-launch hint that explains where to click to load a keyboard.
+        /// Visible only when no keyboard definition is currently loaded.
+        /// </summary>
+        private void DrawEmptyStateHint(Graphics g)
+        {
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            using var titleFont = new Font(SystemFonts.DefaultFont.FontFamily, 14f, FontStyle.Bold);
+            using var bodyFont = new Font(SystemFonts.DefaultFont.FontFamily, 10f, FontStyle.Regular);
+            using var brush = new SolidBrush(InvertForContrast(GlobalSettings.CurrentStyle.BackgroundColor));
+
+            var titleText = $"NohBoard {Version.Get}";
+            const string bodyText = "Right-click anywhere to load a keyboard.";
+
+            var titleSize = g.MeasureString(titleText, titleFont);
+            var bodySize = g.MeasureString(bodyText, bodyFont);
+
+            var totalHeight = titleSize.Height + 6f + bodySize.Height;
+            var startY = (this.ClientSize.Height - totalHeight) / 2f;
+            var titleX = (this.ClientSize.Width - titleSize.Width) / 2f;
+            var bodyX = (this.ClientSize.Width - bodySize.Width) / 2f;
+
+            g.DrawString(titleText, titleFont, brush, titleX, startY);
+            g.DrawString(bodyText, bodyFont, brush, bodyX, startY + titleSize.Height + 6f);
+        }
+
+        /// <summary>
+        /// Picks black or white text depending on the brightness of <paramref name="background"/>
+        /// so the empty-state hint stays readable regardless of the current style.
+        /// </summary>
+        private static Color InvertForContrast(Color background)
+        {
+            var luminance = (0.299 * background.R + 0.587 * background.G + 0.114 * background.B) / 255.0;
+            return luminance > 0.5 ? Color.Black : Color.White;
+        }
+
+        /// <summary>
         /// Forces an update if any of the key or mouse states have changed.
         /// </summary>
         private void UpdateTimer_Tick(object sender, EventArgs e)
@@ -716,5 +874,84 @@ namespace ThoNohT.NohBoard.Forms
                 throw new Exception("A crash log was requested.");
             }
         }
+
+        #region Help menu
+
+        /// <summary>
+        /// Opens the user data folder in Explorer.
+        /// </summary>
+        private void mnuHelpOpenDataFolder_Click(object sender, EventArgs e)
+        {
+            OpenFolder(AppPaths.UserDataDir);
+        }
+
+        /// <summary>
+        /// Opens the logs folder in Explorer.
+        /// </summary>
+        private void mnuHelpOpenLogsFolder_Click(object sender, EventArgs e)
+        {
+            OpenFolder(AppPaths.LogsDir);
+        }
+
+        /// <summary>
+        /// Shows the About dialog with version, runtime, paths, and a "copy last log lines" button.
+        /// </summary>
+        private void mnuHelpAbout_Click(object sender, EventArgs e)
+        {
+            using var about = new AboutForm();
+            about.ShowDialog(this);
+        }
+
+        /// <summary>
+        /// Opens <paramref name="path"/> in the OS file manager, creating it first if necessary.
+        /// Failures are logged but never thrown.
+        /// </summary>
+        private static void OpenFolder(string path)
+        {
+            try
+            {
+                Directory.CreateDirectory(path);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = path,
+                    UseShellExecute = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"Failed to open folder {path}.", ex);
+                ErrorReporter.Show("Could not open folder", $"NohBoard tried to open {path} but failed.", ex);
+            }
+        }
+
+        #endregion Help menu
+
+        #region Edit status strip
+
+        /// <summary>
+        /// Updates the visibility and content of the edit-mode status strip based on the
+        /// current toggle. Hidden in normal capture mode so OBS scenes are not affected.
+        /// </summary>
+        private void UpdateEditStatusStrip()
+        {
+            if (this.EditStatusStrip == null || this.EditStatusLabel == null) return;
+
+            var on = this.mnuToggleEditMode != null && this.mnuToggleEditMode.Checked;
+            this.EditStatusStrip.Visible = on;
+
+            if (!on) return;
+
+            var s = GlobalSettings.Settings;
+            var kbLabel = (s.LoadedCategory != null && s.LoadedKeyboard != null)
+                ? $"{s.LoadedCategory}/{s.LoadedKeyboard}"
+                : "(no keyboard loaded)";
+            var styleLabel = string.IsNullOrEmpty(s.LoadedStyle)
+                ? "default style"
+                : (s.LoadedGlobalStyle ? $"global:{s.LoadedStyle}" : s.LoadedStyle);
+
+            this.EditStatusLabel.Text = $"Edit mode    |    {kbLabel}    |    {styleLabel}";
+        }
+
+        #endregion Edit status strip
     }
 }
